@@ -61,18 +61,15 @@ public class ReportService {
     // Missing documentation is flagged across all public methods in the codebase.
     // This increases onboarding time and transformation risk for automated tools.
     public String buildReportDownloadUrl(String reportName) { // doc-missing-001
-        // VIOLATION cr-java-0088 [Cloud Compatibility / Mandatory]: Plain HTTP URL
-        // hardcoded for report download. Cloud security standards enforce HTTPS.
-        return "http://reports.resorts-internal.com:8080/download/" + reportName; // cr-java-0088
     }
 
     public Map<String, Object> getSystemInfo() { // doc-missing-001
-        String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+        
         Map<String, Object> info = new HashMap<>();
         info.put("reportPath", REPORT_BASE_PATH);  // czr-java-001
         info.put("backupPath", BACKUP_PATH);        // czr-java-001
         info.put("serverPort", SERVER_PORT);        // czr-port-001
-        info.put("generatedAt", timestamp);
+        
         return info;
     }
 }
