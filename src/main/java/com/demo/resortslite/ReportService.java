@@ -13,18 +13,13 @@ import java.util.Map;
 @Service
 public class ReportService {
 
-    // VIOLATION czr-java-001 [Software Portability / Mandatory]: Hardcoded absolute path.
-    // /var/legacy/reports does not exist in a Docker container image. Breaks containerisation.
-    // Must use volume mounts, cloud object storage (S3 / Azure Blob), or environment variable.
+    
     private static final String REPORT_BASE_PATH = "/var/legacy/reports/"; // czr-java-001
 
-    // VIOLATION czr-java-001 [Software Portability / Mandatory]: Windows-style absolute path
-    // will fail on any Linux-based container or cloud host. Hard dependency on OS path structure.
+    
     private static final String BACKUP_PATH = "C:\\ResortBackups\\nightly\\"; // czr-java-001
 
-    // VIOLATION [Software Portability / High]: Fixed server port hardcoded in application logic.
-    // Container orchestration (ECS / EKS) dynamically assigns ports. Hardcoded ports prevent
-    // dynamic port binding required for modern container deployment and service discovery.
+    
     private static final int SERVER_PORT = 8080; // czr-port-001
 
     public Map<String, Object> generateMonthlyReport(String month, String year) {
@@ -57,18 +52,16 @@ public class ReportService {
         return result;
     }
 
-    // VIOLATION [Code Sustainability / Medium]: No JavaDoc or method documentation.
-    // Missing documentation is flagged across all public methods in the codebase.
-    // This increases onboarding time and transformation risk for automated tools.
-    public String buildReportDownloadUrl(String reportName) { // doc-missing-001
+    
+    public String buildReportDownloadUrl(String reportName) { 
     }
 
-    public Map<String, Object> getSystemInfo() { // doc-missing-001
+    public Map<String, Object> getSystemInfo() { 
         
         Map<String, Object> info = new HashMap<>();
-        info.put("reportPath", REPORT_BASE_PATH);  // czr-java-001
-        info.put("backupPath", BACKUP_PATH);        // czr-java-001
-        info.put("serverPort", SERVER_PORT);        // czr-port-001
+        info.put("reportPath", REPORT_BASE_PATH);  
+        info.put("backupPath", BACKUP_PATH);       
+        info.put("serverPort", SERVER_PORT);        
         
         return info;
     }
