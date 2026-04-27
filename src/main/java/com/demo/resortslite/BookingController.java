@@ -1,11 +1,13 @@
 package com.demo.resortslite;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpSession;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/api/bookings")
@@ -14,8 +16,18 @@ public class BookingController {
     @Autowired
     private BookingService bookingService;
 
-   
-    private static final Map<String, Object> bookingCache = new HashMap<>();
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
+    // Externalized configuration using AWS Systems Manager Parameter Store
+    @Value("${app.inventory.endpoint:http://inventory-service:8081/rooms/available}")
+    private String inventoryServiceUrl;
+
+    @Value("${aws.s3.report.bucket:resort-reports-bucket}")
+    private String reportBucket;
+
+    @Value("${app.cache.ttl.seconds:3600}")
+    private long cacheTtlSeconds;
 
     @PostMapping("/create")
     public Map<String, Object> createBooking(
@@ -23,15 +35,23 @@ public class BookingController {
             @RequestParam String roomType,
             @RequestParam String checkIn,
             @RequestParam String checkOut,
-            HttpSession session) {
+            @RequestHeader(value = "X-Session-Id", required = false) String sessionId) {
 
         Map<String, Object> booking = bookingService.createBooking(guestName, roomType, checkIn, checkOut);
 
-        
-        session.setAttribute("lastBooking", booking); 
-        session.setAttribute("guestName", guestName);
+        // Replace HTTP session with Redis-backed distributed session storage
+        if (sessionId != null && !sessionId.isEmpty()) {
+            String sessionKey = "session:" + sessionId + ":lastBooking";
+            String guestKey = "session:" + sessionId + ":guestName";
+            
+            // Store in Amazon ElastiCache for Redis with TTL
+            redisTemplate.opsForValue().set(sessionKey, booking, cacheTtlSeconds, TimeUnit.SECONDS);
+            redisTemplate.opsForValue().set(guestKey, guestName, cacheTtlSeconds, TimeUnit.SECONDS);
+        }
 
-        bookingCache.put((String) booking.get("bookingId"), booking);
+        // Replace unbounded in-memory cache with Redis cache with TTL
+        String cacheKey = "booking:" + booking.get("bookingId");
+        redisTemplate.opsForValue().set(cacheKey, booking, cacheTtlSeconds, TimeUnit.SECONDS);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "confirmed");
@@ -42,10 +62,14 @@ public class BookingController {
     @GetMapping("/status/{bookingId}")
     public Map<String, Object> getBookingStatus(
             @PathVariable String bookingId,
-            HttpSession session) {
+            @RequestHeader(value = "X-Session-Id", required = false) String sessionId) {
 
-       
-        String lastGuest = (String) session.getAttribute("guestName"); 
+        // Retrieve session data from Redis instead of HTTP session
+        String lastGuest = null;
+        if (sessionId != null && !sessionId.isEmpty()) {
+            String guestKey = "session:" + sessionId + ":guestName";
+            lastGuest = (String) redisTemplate.opsForValue().get(guestKey);
+        }
 
         Map<String, Object> result = new HashMap<>();
         result.put("bookingId", bookingId);
@@ -56,23 +80,24 @@ public class BookingController {
 
     @GetMapping("/availability")
     public Map<String, Object> checkAvailability(@RequestParam String roomType) {
-       
-        String inventoryUrl = "http://inventory-service.internal:8081/rooms/available"; 
-
+        // Use externalized configuration from AWS Parameter Store
         Map<String, Object> response = new HashMap<>();
         response.put("roomType", roomType);
-        response.put("inventoryEndpoint", inventoryUrl);
+        response.put("inventoryEndpoint", inventoryServiceUrl);
         response.put("available", bookingService.isRoomAvailable(roomType));
         return response;
     }
 
     @GetMapping("/report/download")
     public Map<String, Object> downloadReport(@RequestParam String month) {
-       
-        String reportPath = "/var/legacy/reports/" + month + "_bookings.pdf"; 
+        // Replace hard-coded file path with S3 bucket reference
+        String s3Key = "reports/" + month + "_bookings.pdf";
+        String s3Uri = "s3://" + reportBucket + "/" + s3Key;
 
         Map<String, Object> response = new HashMap<>();
-        response.put("reportPath", reportPath);
+        response.put("reportBucket", reportBucket);
+        response.put("reportKey", s3Key);
+        response.put("s3Uri", s3Uri);
         response.put("message", bookingService.generateReport(month));
         return response;
     }
