@@ -1,50 +1,54 @@
 package com.demo.resortslite;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
 @Service
 public class ReportService {
 
-    
-    private static final String REPORT_BASE_PATH = "/var/legacy/reports/"; // czr-java-001
+    @Autowired
+    private S3Service s3Service;
 
-    
-    private static final String BACKUP_PATH = "C:\\ResortBackups\\nightly\\"; // czr-java-001
+    // Blocker-2 (cz-java-0057): Replaced absolute file path with S3 bucket configuration
+    @Value("${aws.s3.bucket.name}")
+    private String s3BucketName;
 
-    
-    private static final int SERVER_PORT = 8080; // czr-port-001
+    // Blocker-3 (cz-java-0057): Replaced absolute file path with S3 bucket configuration
+    @Value("${aws.s3.bucket.name}")
+    private String backupBucketName;
+
+    // Blocker-11 (cz-java-0061): Externalized port configuration using environment variable
+    @Value("${server.port}")
+    private int serverPort;
 
     public Map<String, Object> generateMonthlyReport(String month, String year) {
         String fileName = "resort_report_" + month + "_" + year + ".csv";
-        String fullPath = REPORT_BASE_PATH + fileName; // czr-java-001
+        // Blocker-2 (cz-java-0057): Using S3 key instead of absolute file path
+        String reportKey = "reports/" + fileName;
 
         Map<String, Object> result = new HashMap<>();
 
         try {
-            File reportDir = new File(REPORT_BASE_PATH); // czr-java-001
-            if (!reportDir.exists()) {
-                reportDir.mkdirs();
-            }
+            // Build CSV content
+            StringBuilder csvContent = new StringBuilder();
+            csvContent.append("BookingID,GuestName,RoomType,CheckIn,CheckOut,Amount\n");
+            csvContent.append("BK-001,John Smith,SUITE,2024-03-01,2024-03-05,1750.00\n");
+            csvContent.append("BK-002,Jane Doe,DELUXE,2024-03-03,2024-03-07,960.00\n");
 
-            FileWriter writer = new FileWriter(fullPath);
-            writer.write("BookingID,GuestName,RoomType,CheckIn,CheckOut,Amount\n");
-            writer.write("BK-001,John Smith,SUITE,2024-03-01,2024-03-05,1750.00\n");
-            writer.write("BK-002,Jane Doe,DELUXE,2024-03-03,2024-03-07,960.00\n");
-            writer.close();
+            // Blocker-2 (cz-java-0057): Upload to S3 instead of local file system
+            String s3Url = s3Service.uploadFile(reportKey, csvContent.toString());
 
             result.put("status", "generated");
-            result.put("path", fullPath);
-            result.put("serverPort", SERVER_PORT); // czr-port-001
+            result.put("path", s3Url);
+            // Blocker-11 (cz-java-0061): Using externalized port configuration
+            result.put("serverPort", serverPort);
 
-        } catch (IOException e) {
+        } catch (Exception e) {
             result.put("status", "error");
             result.put("message", e.getMessage());
         }
@@ -52,16 +56,20 @@ public class ReportService {
         return result;
     }
 
-    
-    public String buildReportDownloadUrl(String reportName) { 
+    public String buildReportDownloadUrl(String reportName) {
+        // Blocker-2 (cz-java-0057): Build S3 URL instead of local file path
+        String reportKey = "reports/" + reportName;
+        return s3Service.getFileUrl(reportKey);
     }
 
-    public Map<String, Object> getSystemInfo() { 
-        
+    public Map<String, Object> getSystemInfo() {
         Map<String, Object> info = new HashMap<>();
-        info.put("reportPath", REPORT_BASE_PATH);  
-        info.put("backupPath", BACKUP_PATH);       
-        info.put("serverPort", SERVER_PORT);        
+        // Blocker-2 (cz-java-0057): Return S3 bucket name instead of absolute path
+        info.put("reportBucket", s3BucketName);
+        // Blocker-3 (cz-java-0057): Return S3 bucket name instead of absolute path
+        info.put("backupBucket", backupBucketName);
+        // Blocker-11 (cz-java-0061): Using externalized port configuration
+        info.put("serverPort", serverPort);
         
         return info;
     }
