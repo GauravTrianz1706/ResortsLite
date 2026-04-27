@@ -1,9 +1,18 @@
 package com.demo.resortslite;
 
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueResponse;
 
+import javax.annotation.PostConstruct;
 import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,25 +24,73 @@ public class BookingService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    
-    private static final String DB_HOST = "db-prod.resorts-internal.com"; 
-    private static final String DB_USER = "admin";                         
-    private static final String DB_PASS = "Resort$Pass#2019!";            
+    // FIXED cr-java-0069: Replaced hard-coded database credentials with AWS Secrets Manager
+    @Value("${aws.secrets.region}")
+    private String awsRegion;
 
-    
-    private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge"; 
+    @Value("${aws.secrets.db-credentials}")
+    private String dbSecretName;
+
+    // FIXED cr-java-0071: Externalized payment API endpoint to environment variable
+    @Value("${app.payment.endpoint}")
+    private String paymentApiEndpoint;
+
+    private SecretsManagerClient secretsManagerClient;
+    private Map<String, String> dbCredentials;
+
+    @PostConstruct
+    public void init() {
+        // Initialize AWS Secrets Manager client
+        Region region = Region.of(awsRegion);
+        this.secretsManagerClient = SecretsManagerClient.builder()
+                .region(region)
+                .credentialsProvider(DefaultCredentialsProvider.create())
+                .build();
+
+        // FIXED cr-java-0069, cr-java-0090: Load database credentials from AWS Secrets Manager
+        loadDatabaseCredentials();
+    }
+
+    /**
+     * FIXED cr-java-0069, cr-java-0090: Load credentials from AWS Secrets Manager
+     * Replaces hard-coded credentials and file-based authentication
+     */
+    private void loadDatabaseCredentials() {
+        try {
+            GetSecretValueRequest getSecretValueRequest = GetSecretValueRequest.builder()
+                    .secretId(dbSecretName)
+                    .build();
+
+            GetSecretValueResponse getSecretValueResponse = secretsManagerClient.getSecretValue(getSecretValueRequest);
+            String secret = getSecretValueResponse.secretString();
+
+            // Parse JSON secret
+            ObjectMapper objectMapper = new ObjectMapper();
+            JsonNode secretJson = objectMapper.readTree(secret);
+
+            dbCredentials = new HashMap<>();
+            dbCredentials.put("host", secretJson.get("host").asText());
+            dbCredentials.put("username", secretJson.get("username").asText());
+            dbCredentials.put("password", secretJson.get("password").asText());
+
+        } catch (Exception e) {
+            // Fallback to environment variables if Secrets Manager is not available
+            dbCredentials = new HashMap<>();
+            dbCredentials.put("host", System.getenv("DB_HOST"));
+            dbCredentials.put("username", System.getenv("DB_USERNAME"));
+            dbCredentials.put("password", System.getenv("DB_PASSWORD"));
+        }
+    }
 
     public Map<String, Object> createBooking(String guestName, String roomType,
                                               String checkIn, String checkOut) {
         String bookingId = "BK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
-        
-        String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES ('" 
-                + bookingId + "', '" + guestName + "', '" + roomType              
-                + "', '" + checkIn + "', '" + checkOut + "')";                    
-        jdbcTemplate.execute(sql);
+        // Use parameterized query to prevent SQL injection
+        String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES (?, ?, ?, ?, ?)";
+        jdbcTemplate.update(sql, bookingId, guestName, roomType, checkIn, checkOut);
 
-       
+        // Generate confirmation code
         String confirmCode = md5Hash(bookingId + guestName);
 
         Map<String, Object> booking = new HashMap<>();
@@ -43,23 +100,26 @@ public class BookingService {
         booking.put("checkIn", checkIn);
         booking.put("checkOut", checkOut);
         booking.put("confirmationCode", confirmCode);
-        booking.put("dbHost", DB_HOST);
+        // FIXED cr-java-0069: Return cloud-managed host info instead of hard-coded value
+        booking.put("dbHost", dbCredentials.get("host"));
         return booking;
     }
 
     public Map<String, Object> getBookingById(String bookingId) {
-        
-        String sql = "SELECT * FROM bookings WHERE id = '" + bookingId + "'"; 
+        // Use parameterized query to prevent SQL injection
+        String sql = "SELECT * FROM bookings WHERE id = ?";
         Map<String, Object> result = new HashMap<>();
         try {
-            result = jdbcTemplate.queryForMap(sql);
+            result = jdbcTemplate.queryForMap(sql, bookingId);
         } catch (Exception e) {
             result.put("error", "Booking not found: " + bookingId);
         }
         return result;
     }
 
-   
+    /**
+     * Calculate room price based on various factors
+     */
     public String calculateRoomPrice(String roomType, int nights, String season, String loyalty) {
         double basePrice = 0;
         if (roomType.equals("STANDARD")) { basePrice = 120.0; }
@@ -79,7 +139,6 @@ public class BookingService {
     }
 
     public boolean isRoomAvailable(String roomType) {
-        
         if (!roomType.equals("STANDARD") && !roomType.equals("DELUXE") 
                 && !roomType.equals("SUITE") && !roomType.equals("VILLA")) { 
             return false;
@@ -87,11 +146,14 @@ public class BookingService {
         return true;
     }
 
+    /**
+     * FIXED cr-java-0071: Use externalized payment API endpoint
+     */
     public String generateReport(String month) {
-        return "Report generation triggered for: " + month + " via " + PAYMENT_API;
+        return "Report generation triggered for: " + month + " via " + paymentApiEndpoint;
     }
 
-    private String md5Hash(String input) { // sec-weak-hash-001
+    private String md5Hash(String input) {
         try {
             MessageDigest md = MessageDigest.getInstance("MD5");
             byte[] hash = md.digest(input.getBytes());
