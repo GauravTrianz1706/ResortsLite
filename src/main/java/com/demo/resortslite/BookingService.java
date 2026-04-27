@@ -2,6 +2,7 @@ package com.demo.resortslite;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.security.MessageDigest;
@@ -20,8 +21,9 @@ public class BookingService {
     private static final String DB_USER = "admin";                         
     private static final String DB_PASS = "Resort$Pass#2019!";            
 
-    
-    private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge"; 
+    // Blocker-12: Replaced hardcoded IP address with externalized configuration
+    @Value("${app.payment.endpoint}")
+    private String paymentApiUrl;
 
     public Map<String, Object> createBooking(String guestName, String roomType,
                                               String checkIn, String checkOut) {
@@ -60,6 +62,8 @@ public class BookingService {
     }
 
    
+    // Blocker-10: Complex business logic method - candidate for microservice decomposition
+    // This pricing logic should be extracted to a separate Pricing microservice
     public String calculateRoomPrice(String roomType, int nights, String season, String loyalty) {
         double basePrice = 0;
         if (roomType.equals("STANDARD")) { basePrice = 120.0; }
@@ -88,7 +92,8 @@ public class BookingService {
     }
 
     public String generateReport(String month) {
-        return "Report generation triggered for: " + month + " via " + PAYMENT_API;
+        // Blocker-12: Now using externalized payment API URL
+        return "Report generation triggered for: " + month + " via " + paymentApiUrl;
     }
 
     private String md5Hash(String input) { // sec-weak-hash-001

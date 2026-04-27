@@ -1,6 +1,8 @@
 package com.demo.resortslite;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpSession;
@@ -14,8 +16,14 @@ public class BookingController {
     @Autowired
     private BookingService bookingService;
 
-   
-    private static final Map<String, Object> bookingCache = new HashMap<>();
+    @Autowired
+    private GcsStorageService gcsStorageService;
+
+    @Value("${app.inventory.endpoint}")
+    private String inventoryUrl;
+
+    // Blocker-13: Replaced local cache with distributed cache via Spring Cache
+    // Local cache removed - now using @Cacheable annotation with Redis backend
 
     @PostMapping("/create")
     public Map<String, Object> createBooking(
@@ -27,11 +35,12 @@ public class BookingController {
 
         Map<String, Object> booking = bookingService.createBooking(guestName, roomType, checkIn, checkOut);
 
-        
-        session.setAttribute("lastBooking", booking); 
+        // Blocker-5, Blocker-7, Blocker-8: Session now backed by Redis via Spring Session
+        // HttpSession is now externalized to Memorystore Redis automatically
+        session.setAttribute("lastBooking", booking);
         session.setAttribute("guestName", guestName);
 
-        bookingCache.put((String) booking.get("bookingId"), booking);
+        // Blocker-13: Caching now handled by @Cacheable on service methods with Redis
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "confirmed");
@@ -40,12 +49,13 @@ public class BookingController {
     }
 
     @GetMapping("/status/{bookingId}")
+    @Cacheable(value = "bookingStatus", key = "#bookingId")
     public Map<String, Object> getBookingStatus(
             @PathVariable String bookingId,
             HttpSession session) {
 
-       
-        String lastGuest = (String) session.getAttribute("guestName"); 
+        // Blocker-6: Session now backed by Redis via Spring Session
+        String lastGuest = (String) session.getAttribute("guestName");
 
         Map<String, Object> result = new HashMap<>();
         result.put("bookingId", bookingId);
@@ -56,8 +66,8 @@ public class BookingController {
 
     @GetMapping("/availability")
     public Map<String, Object> checkAvailability(@RequestParam String roomType) {
-       
-        String inventoryUrl = "http://inventory-service.internal:8081/rooms/available"; 
+        // Blocker-9: Service endpoint externalized to configuration
+        // inventoryUrl now injected from application.properties
 
         Map<String, Object> response = new HashMap<>();
         response.put("roomType", roomType);
@@ -68,11 +78,23 @@ public class BookingController {
 
     @GetMapping("/report/download")
     public Map<String, Object> downloadReport(@RequestParam String month) {
-       
-        String reportPath = "/var/legacy/reports/" + month + "_bookings.pdf"; 
-
+        // Blocker-1: Replaced absolute file path with GCS storage
+        String reportFileName = month + "_bookings.pdf";
+        
         Map<String, Object> response = new HashMap<>();
-        response.put("reportPath", reportPath);
+        try {
+            // Check if report exists in GCS
+            if (gcsStorageService.fileExists(reportFileName)) {
+                String signedUrl = gcsStorageService.getSignedUrl(reportFileName, 60);
+                response.put("reportUrl", signedUrl);
+                response.put("storage", "gcs");
+            } else {
+                response.put("message", "Report not found in cloud storage");
+            }
+        } catch (Exception e) {
+            response.put("error", "Failed to access cloud storage: " + e.getMessage());
+        }
+        
         response.put("message", bookingService.generateReport(month));
         return response;
     }

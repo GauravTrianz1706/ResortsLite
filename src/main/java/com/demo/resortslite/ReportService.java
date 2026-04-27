@@ -1,9 +1,9 @@
 package com.demo.resortslite;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -13,36 +13,40 @@ import java.util.Map;
 @Service
 public class ReportService {
 
-    
-    private static final String REPORT_BASE_PATH = "/var/legacy/reports/"; // czr-java-001
+    @Autowired
+    private GcsStorageService gcsStorageService;
 
-    
-    private static final String BACKUP_PATH = "C:\\ResortBackups\\nightly\\"; // czr-java-001
+    // Blocker-2: Replaced absolute file path with GCS bucket configuration
+    @Value("${gcs.bucket.name}")
+    private String gcsBucketName;
 
-    
-    private static final int SERVER_PORT = 8080; // czr-port-001
+    // Blocker-3: Replaced absolute Windows path with environment variable
+    @Value("${backup.path:gs://${gcs.bucket.name}/backups}")
+    private String backupPath;
+
+    // Blocker-11: Externalized port configuration
+    @Value("${server.port:8080}")
+    private int serverPort;
 
     public Map<String, Object> generateMonthlyReport(String month, String year) {
         String fileName = "resort_report_" + month + "_" + year + ".csv";
-        String fullPath = REPORT_BASE_PATH + fileName; // czr-java-001
-
+        
         Map<String, Object> result = new HashMap<>();
 
         try {
-            File reportDir = new File(REPORT_BASE_PATH); // czr-java-001
-            if (!reportDir.exists()) {
-                reportDir.mkdirs();
-            }
+            // Blocker-2, Blocker-3: Generate report content and upload to GCS
+            StringBuilder reportContent = new StringBuilder();
+            reportContent.append("BookingID,GuestName,RoomType,CheckIn,CheckOut,Amount\n");
+            reportContent.append("BK-001,John Smith,SUITE,2024-03-01,2024-03-05,1750.00\n");
+            reportContent.append("BK-002,Jane Doe,DELUXE,2024-03-03,2024-03-07,960.00\n");
 
-            FileWriter writer = new FileWriter(fullPath);
-            writer.write("BookingID,GuestName,RoomType,CheckIn,CheckOut,Amount\n");
-            writer.write("BK-001,John Smith,SUITE,2024-03-01,2024-03-05,1750.00\n");
-            writer.write("BK-002,Jane Doe,DELUXE,2024-03-03,2024-03-07,960.00\n");
-            writer.close();
+            String gcsPath = gcsStorageService.uploadFile(fileName, reportContent.toString());
 
             result.put("status", "generated");
-            result.put("path", fullPath);
-            result.put("serverPort", SERVER_PORT); // czr-port-001
+            result.put("path", gcsPath);
+            result.put("storage", "gcs");
+            result.put("bucket", gcsBucketName);
+            result.put("serverPort", serverPort); // Blocker-11: Now from configuration
 
         } catch (IOException e) {
             result.put("status", "error");
@@ -52,16 +56,21 @@ public class ReportService {
         return result;
     }
 
-    
-    public String buildReportDownloadUrl(String reportName) { 
+    public String buildReportDownloadUrl(String reportName) {
+        // Blocker-2: Use GCS signed URLs instead of local file paths
+        try {
+            return gcsStorageService.getSignedUrl(reportName, 60);
+        } catch (IOException e) {
+            return "Error generating download URL: " + e.getMessage();
+        }
     }
 
-    public Map<String, Object> getSystemInfo() { 
-        
+    public Map<String, Object> getSystemInfo() {
+        // Blocker-2, Blocker-3, Blocker-11: All paths and ports now externalized
         Map<String, Object> info = new HashMap<>();
-        info.put("reportPath", REPORT_BASE_PATH);  
-        info.put("backupPath", BACKUP_PATH);       
-        info.put("serverPort", SERVER_PORT);        
+        info.put("reportStorage", "gs://" + gcsBucketName);
+        info.put("backupPath", backupPath);
+        info.put("serverPort", serverPort);
         
         return info;
     }
