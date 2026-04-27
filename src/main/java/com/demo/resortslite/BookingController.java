@@ -1,11 +1,15 @@
 package com.demo.resortslite;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpSession;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/api/bookings")
@@ -13,9 +17,12 @@ public class BookingController {
 
     @Autowired
     private BookingService bookingService;
-
-   
-    private static final Map<String, Object> bookingCache = new HashMap<>();
+    
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+    
+    @Value("${app.inventory.endpoint}")
+    private String inventoryServiceUrl;
 
     @PostMapping("/create")
     public Map<String, Object> createBooking(
@@ -27,11 +34,13 @@ public class BookingController {
 
         Map<String, Object> booking = bookingService.createBooking(guestName, roomType, checkIn, checkOut);
 
-        
-        session.setAttribute("lastBooking", booking); 
+        // Store in Redis-backed session (automatically distributed across instances)
+        session.setAttribute("lastBooking", booking);
         session.setAttribute("guestName", guestName);
 
-        bookingCache.put((String) booking.get("bookingId"), booking);
+        // Store in Redis cache with TTL (replaces in-memory cache)
+        String bookingId = (String) booking.get("bookingId");
+        redisTemplate.opsForValue().set("booking:" + bookingId, booking, 1, TimeUnit.HOURS);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "confirmed");
@@ -44,8 +53,8 @@ public class BookingController {
             @PathVariable String bookingId,
             HttpSession session) {
 
-       
-        String lastGuest = (String) session.getAttribute("guestName"); 
+        // Retrieve from Redis-backed session
+        String lastGuest = (String) session.getAttribute("guestName");
 
         Map<String, Object> result = new HashMap<>();
         result.put("bookingId", bookingId);
@@ -56,24 +65,20 @@ public class BookingController {
 
     @GetMapping("/availability")
     public Map<String, Object> checkAvailability(@RequestParam String roomType) {
-       
-        String inventoryUrl = "http://inventory-service.internal:8081/rooms/available"; 
-
+        // Use externalized inventory service URL from environment variables
         Map<String, Object> response = new HashMap<>();
         response.put("roomType", roomType);
-        response.put("inventoryEndpoint", inventoryUrl);
+        response.put("inventoryEndpoint", inventoryServiceUrl);
         response.put("available", bookingService.isRoomAvailable(roomType));
         return response;
     }
 
     @GetMapping("/report/download")
     public Map<String, Object> downloadReport(@RequestParam String month) {
-       
-        String reportPath = "/var/legacy/reports/" + month + "_bookings.pdf"; 
-
+        // Reports are now stored in Google Cloud Storage, not local filesystem
         Map<String, Object> response = new HashMap<>();
-        response.put("reportPath", reportPath);
         response.put("message", bookingService.generateReport(month));
+        response.put("storageType", "Google Cloud Storage");
         return response;
     }
 }
