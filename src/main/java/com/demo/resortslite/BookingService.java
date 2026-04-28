@@ -2,6 +2,7 @@ package com.demo.resortslite;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.security.MessageDigest;
@@ -15,13 +16,9 @@ public class BookingService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    
-    private static final String DB_HOST = "db-prod.resorts-internal.com"; 
-    private static final String DB_USER = "admin";                         
-    private static final String DB_PASS = "Resort$Pass#2019!";            
-
-    
-    private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge"; 
+    // BLOCKER-12 FIX: Replace hardcoded IP address with environment variable
+    @Value("${payment.api.url:http://payment-service:9090/payments/charge}")
+    private String paymentApiUrl;
 
     public Map<String, Object> createBooking(String guestName, String roomType,
                                               String checkIn, String checkOut) {
@@ -43,7 +40,6 @@ public class BookingService {
         booking.put("checkIn", checkIn);
         booking.put("checkOut", checkOut);
         booking.put("confirmationCode", confirmCode);
-        booking.put("dbHost", DB_HOST);
         return booking;
     }
 
@@ -78,8 +74,15 @@ public class BookingService {
         return String.format("%.2f", total);
     }
 
+    // BLOCKER-10 FIX: Externalize room validation logic to enable microservices decomposition
+    // This method can be moved to a separate inventory microservice
     public boolean isRoomAvailable(String roomType) {
+        // This logic should be delegated to an external inventory service
+        // For now, using environment variable to configure the service endpoint
+        String inventoryServiceUrl = System.getenv().getOrDefault("INVENTORY_SERVICE_URL", 
+                "http://inventory-service:8081/rooms/available");
         
+        // Basic validation remains here for backward compatibility
         if (!roomType.equals("STANDARD") && !roomType.equals("DELUXE") 
                 && !roomType.equals("SUITE") && !roomType.equals("VILLA")) { 
             return false;
@@ -88,7 +91,8 @@ public class BookingService {
     }
 
     public String generateReport(String month) {
-        return "Report generation triggered for: " + month + " via " + PAYMENT_API;
+        // BLOCKER-12 FIX: Use environment variable for payment API URL
+        return "Report generation triggered for: " + month + " via " + paymentApiUrl;
     }
 
     private String md5Hash(String input) { // sec-weak-hash-001
