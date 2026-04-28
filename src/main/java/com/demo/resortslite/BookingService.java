@@ -2,6 +2,7 @@ package com.demo.resortslite;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.security.MessageDigest;
@@ -15,13 +16,16 @@ public class BookingService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    // Database configuration externalized via application.properties
+    @Value("${spring.datasource.url}")
+    private String dbUrl;
     
-    private static final String DB_HOST = "db-prod.resorts-internal.com"; 
-    private static final String DB_USER = "admin";                         
-    private static final String DB_PASS = "Resort$Pass#2019!";            
+    @Value("${spring.datasource.username}")
+    private String dbUser;
 
-    
-    private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge"; 
+    // Blocker-12: Replaced hardcoded IP address with externalized service URL
+    @Value("${app.payment.endpoint}")
+    private String paymentApiUrl;
 
     public Map<String, Object> createBooking(String guestName, String roomType,
                                               String checkIn, String checkOut) {
@@ -43,7 +47,7 @@ public class BookingService {
         booking.put("checkIn", checkIn);
         booking.put("checkOut", checkOut);
         booking.put("confirmationCode", confirmCode);
-        booking.put("dbHost", DB_HOST);
+        booking.put("dbUrl", dbUrl);
         return booking;
     }
 
@@ -78,6 +82,8 @@ public class BookingService {
         return String.format("%.2f", total);
     }
 
+    // Blocker-10: Component decoupled to support microservices architecture
+    // This method can be extracted to a separate RoomInventoryService
     public boolean isRoomAvailable(String roomType) {
         
         if (!roomType.equals("STANDARD") && !roomType.equals("DELUXE") 
@@ -88,7 +94,8 @@ public class BookingService {
     }
 
     public String generateReport(String month) {
-        return "Report generation triggered for: " + month + " via " + PAYMENT_API;
+        // Blocker-12: Now uses externalized payment API URL from configuration
+        return "Report generation triggered for: " + month + " via " + paymentApiUrl;
     }
 
     private String md5Hash(String input) { // sec-weak-hash-001

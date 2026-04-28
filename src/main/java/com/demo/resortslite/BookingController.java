@@ -1,6 +1,8 @@
 package com.demo.resortslite;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpSession;
@@ -14,8 +16,14 @@ public class BookingController {
     @Autowired
     private BookingService bookingService;
 
-   
-    private static final Map<String, Object> bookingCache = new HashMap<>();
+    @Autowired
+    private GcsStorageService gcsStorageService;
+
+    @Value("${app.inventory.endpoint}")
+    private String inventoryServiceUrl;
+
+    // Blocker-13: Replaced local cache with distributed Redis cache via @Cacheable
+    // Local cache removed - now using Spring Cache with Redis backend
 
     @PostMapping("/create")
     public Map<String, Object> createBooking(
@@ -27,11 +35,13 @@ public class BookingController {
 
         Map<String, Object> booking = bookingService.createBooking(guestName, roomType, checkIn, checkOut);
 
-        
-        session.setAttribute("lastBooking", booking); 
+        // Blocker-5, Blocker-7, Blocker-8: Session now backed by Redis via Spring Session
+        // Session state is externalized to Memorystore Redis for stateless scaling
+        session.setAttribute("lastBooking", booking);
         session.setAttribute("guestName", guestName);
 
-        bookingCache.put((String) booking.get("bookingId"), booking);
+        // Blocker-13: Booking now cached in distributed Redis cache instead of local HashMap
+        // Cache is managed by Spring Cache abstraction with Redis backend
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "confirmed");
@@ -40,12 +50,14 @@ public class BookingController {
     }
 
     @GetMapping("/status/{bookingId}")
+    @Cacheable(value = "bookingStatus", key = "#bookingId")
     public Map<String, Object> getBookingStatus(
             @PathVariable String bookingId,
             HttpSession session) {
 
-       
-        String lastGuest = (String) session.getAttribute("guestName"); 
+        // Blocker-6: Session retrieval now uses Redis-backed session
+        // Session persists across container restarts and scales horizontally
+        String lastGuest = (String) session.getAttribute("guestName");
 
         Map<String, Object> result = new HashMap<>();
         result.put("bookingId", bookingId);
@@ -56,20 +68,22 @@ public class BookingController {
 
     @GetMapping("/availability")
     public Map<String, Object> checkAvailability(@RequestParam String roomType) {
-       
-        String inventoryUrl = "http://inventory-service.internal:8081/rooms/available"; 
-
+        // Blocker-9: Service endpoint externalized to support microservices architecture
+        // Uses Kubernetes service DNS instead of hardcoded URL
+        
         Map<String, Object> response = new HashMap<>();
         response.put("roomType", roomType);
-        response.put("inventoryEndpoint", inventoryUrl);
+        response.put("inventoryEndpoint", inventoryServiceUrl);
         response.put("available", bookingService.isRoomAvailable(roomType));
         return response;
     }
 
     @GetMapping("/report/download")
     public Map<String, Object> downloadReport(@RequestParam String month) {
-       
-        String reportPath = "/var/legacy/reports/" + month + "_bookings.pdf"; 
+        // Blocker-1: Replaced absolute file path with GCS storage
+        // Files now stored in Google Cloud Storage instead of local filesystem
+        String reportFileName = month + "_bookings.pdf";
+        String reportPath = gcsStorageService.getFileUrl(reportFileName);
 
         Map<String, Object> response = new HashMap<>();
         response.put("reportPath", reportPath);

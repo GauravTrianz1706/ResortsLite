@@ -1,5 +1,7 @@
 package com.demo.resortslite;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -13,38 +15,41 @@ import java.util.Map;
 @Service
 public class ReportService {
 
-    
-    private static final String REPORT_BASE_PATH = "/var/legacy/reports/"; // czr-java-001
+    @Autowired
+    private GcsStorageService gcsStorageService;
 
-    
-    private static final String BACKUP_PATH = "C:\\ResortBackups\\nightly\\"; // czr-java-001
+    // Blocker-2: Replaced hardcoded absolute path with externalized configuration
+    @Value("${app.report.base-path}")
+    private String reportBasePath;
 
-    
-    private static final int SERVER_PORT = 8080; // czr-port-001
+    // Blocker-3: Replaced hardcoded absolute path with externalized configuration
+    @Value("${app.backup.path}")
+    private String backupPath;
+
+    // Blocker-11: Replaced hardcoded port with externalized configuration
+    @Value("${server.port}")
+    private int serverPort;
 
     public Map<String, Object> generateMonthlyReport(String month, String year) {
         String fileName = "resort_report_" + month + "_" + year + ".csv";
-        String fullPath = REPORT_BASE_PATH + fileName; // czr-java-001
 
         Map<String, Object> result = new HashMap<>();
 
         try {
-            File reportDir = new File(REPORT_BASE_PATH); // czr-java-001
-            if (!reportDir.exists()) {
-                reportDir.mkdirs();
-            }
+            // Generate report content
+            StringBuilder reportContent = new StringBuilder();
+            reportContent.append("BookingID,GuestName,RoomType,CheckIn,CheckOut,Amount\n");
+            reportContent.append("BK-001,John Smith,SUITE,2024-03-01,2024-03-05,1750.00\n");
+            reportContent.append("BK-002,Jane Doe,DELUXE,2024-03-03,2024-03-07,960.00\n");
 
-            FileWriter writer = new FileWriter(fullPath);
-            writer.write("BookingID,GuestName,RoomType,CheckIn,CheckOut,Amount\n");
-            writer.write("BK-001,John Smith,SUITE,2024-03-01,2024-03-05,1750.00\n");
-            writer.write("BK-002,Jane Doe,DELUXE,2024-03-03,2024-03-07,960.00\n");
-            writer.close();
+            // Blocker-2, Blocker-3: Upload to GCS instead of local filesystem
+            String gcsPath = gcsStorageService.uploadFile(fileName, reportContent.toString());
 
             result.put("status", "generated");
-            result.put("path", fullPath);
-            result.put("serverPort", SERVER_PORT); // czr-port-001
+            result.put("path", gcsPath);
+            result.put("serverPort", serverPort); // Blocker-11: Now uses externalized port
 
-        } catch (IOException e) {
+        } catch (Exception e) {
             result.put("status", "error");
             result.put("message", e.getMessage());
         }
@@ -52,16 +57,17 @@ public class ReportService {
         return result;
     }
 
-    
-    public String buildReportDownloadUrl(String reportName) { 
+    public String buildReportDownloadUrl(String reportName) {
+        // Blocker-2: Use GCS URL instead of local file path
+        return gcsStorageService.getFileUrl(reportName);
     }
 
-    public Map<String, Object> getSystemInfo() { 
-        
+    public Map<String, Object> getSystemInfo() {
+        // Blocker-2, Blocker-3, Blocker-11: All paths and ports now externalized
         Map<String, Object> info = new HashMap<>();
-        info.put("reportPath", REPORT_BASE_PATH);  
-        info.put("backupPath", BACKUP_PATH);       
-        info.put("serverPort", SERVER_PORT);        
+        info.put("reportPath", reportBasePath);
+        info.put("backupPath", backupPath);
+        info.put("serverPort", serverPort);
         
         return info;
     }
