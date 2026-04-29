@@ -1,9 +1,21 @@
 package com.demo.resortslite;
 
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueResponse;
 
+import javax.annotation.PostConstruct;
+import java.io.File;
+import java.io.FileReader;
+import java.io.BufferedReader;
 import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,26 +27,73 @@ public class BookingService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    private final SecretsManagerClient secretsManagerClient;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     
-    private static final String DB_HOST = "db-prod.resorts-internal.com"; 
-    private static final String DB_USER = "admin";                         
-    private static final String DB_PASS = "Resort$Pass#2019!";            
+    @Value("${aws.secrets.db-credentials-secret}")
+    private String dbCredentialsSecretName;
+    
+    @Value("${aws.secrets.region}")
+    private String awsRegion;
+    
+    @Value("${app.payment.endpoint}")
+    private String paymentApiEndpoint;
 
-    
-    private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge"; 
+    // Database credentials retrieved from AWS Secrets Manager
+    private String dbHost;
+    private String dbUser;
+    private String dbPassword;
+
+    public BookingService(@Value("${aws.secrets.region}") String region) {
+        // Initialize AWS Secrets Manager client
+        this.secretsManagerClient = SecretsManagerClient.builder()
+                .region(Region.of(region))
+                .credentialsProvider(DefaultCredentialsProvider.create())
+                .build();
+    }
+
+    @PostConstruct
+    public void init() {
+        // Retrieve database credentials from AWS Secrets Manager on startup
+        retrieveDatabaseCredentials();
+    }
+
+    /**
+     * Retrieve database credentials from AWS Secrets Manager
+     */
+    private void retrieveDatabaseCredentials() {
+        try {
+            GetSecretValueRequest request = GetSecretValueRequest.builder()
+                    .secretId(dbCredentialsSecretName)
+                    .build();
+
+            GetSecretValueResponse response = secretsManagerClient.getSecretValue(request);
+            String secretString = response.secretString();
+
+            // Parse JSON secret
+            JsonNode secretJson = objectMapper.readTree(secretString);
+            this.dbHost = secretJson.get("host").asText();
+            this.dbUser = secretJson.get("username").asText();
+            this.dbPassword = secretJson.get("password").asText();
+
+        } catch (Exception e) {
+            // Fallback to environment variables if Secrets Manager is not available
+            this.dbHost = System.getenv().getOrDefault("DB_HOST", "localhost");
+            this.dbUser = System.getenv().getOrDefault("DB_USER", "sa");
+            this.dbPassword = System.getenv().getOrDefault("DB_PASSWORD", "");
+        }
+    }
 
     public Map<String, Object> createBooking(String guestName, String roomType,
                                               String checkIn, String checkOut) {
         String bookingId = "BK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
-        
-        String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES ('" 
-                + bookingId + "', '" + guestName + "', '" + roomType              
-                + "', '" + checkIn + "', '" + checkOut + "')";                    
-        jdbcTemplate.execute(sql);
+        // Use parameterized query to prevent SQL injection
+        String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES (?, ?, ?, ?, ?)";
+        jdbcTemplate.update(sql, bookingId, guestName, roomType, checkIn, checkOut);
 
-       
-        String confirmCode = md5Hash(bookingId + guestName);
+        // Generate confirmation code using secure hash
+        String confirmCode = sha256Hash(bookingId + guestName);
 
         Map<String, Object> booking = new HashMap<>();
         booking.put("bookingId", bookingId);
@@ -43,23 +102,22 @@ public class BookingService {
         booking.put("checkIn", checkIn);
         booking.put("checkOut", checkOut);
         booking.put("confirmationCode", confirmCode);
-        booking.put("dbHost", DB_HOST);
+        booking.put("dbHost", dbHost);
         return booking;
     }
 
     public Map<String, Object> getBookingById(String bookingId) {
-        
-        String sql = "SELECT * FROM bookings WHERE id = '" + bookingId + "'"; 
+        // Use parameterized query to prevent SQL injection
+        String sql = "SELECT * FROM bookings WHERE id = ?";
         Map<String, Object> result = new HashMap<>();
         try {
-            result = jdbcTemplate.queryForMap(sql);
+            result = jdbcTemplate.queryForMap(sql, bookingId);
         } catch (Exception e) {
             result.put("error", "Booking not found: " + bookingId);
         }
         return result;
     }
 
-   
     public String calculateRoomPrice(String roomType, int nights, String season, String loyalty) {
         double basePrice = 0;
         if (roomType.equals("STANDARD")) { basePrice = 120.0; }
@@ -79,7 +137,6 @@ public class BookingService {
     }
 
     public boolean isRoomAvailable(String roomType) {
-        
         if (!roomType.equals("STANDARD") && !roomType.equals("DELUXE") 
                 && !roomType.equals("SUITE") && !roomType.equals("VILLA")) { 
             return false;
@@ -88,15 +145,50 @@ public class BookingService {
     }
 
     public String generateReport(String month) {
-        return "Report generation triggered for: " + month + " via " + PAYMENT_API;
+        return "Report generation triggered for: " + month + " via " + paymentApiEndpoint;
     }
 
-    private String md5Hash(String input) { // sec-weak-hash-001
+    /**
+     * Authenticate user using AWS Secrets Manager instead of local file
+     * This replaces file-based authentication with cloud-native approach
+     */
+    public boolean authenticateUser(String username, String password) {
         try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
+            // Retrieve user credentials from AWS Secrets Manager
+            String userSecretName = "resorts-lite/users/" + username;
+            
+            GetSecretValueRequest request = GetSecretValueRequest.builder()
+                    .secretId(userSecretName)
+                    .build();
+
+            GetSecretValueResponse response = secretsManagerClient.getSecretValue(request);
+            String secretString = response.secretString();
+
+            // Parse JSON secret
+            JsonNode secretJson = objectMapper.readTree(secretString);
+            String storedPasswordHash = secretJson.get("passwordHash").asText();
+            
+            // Compare hashed passwords
+            String providedPasswordHash = sha256Hash(password);
+            return storedPasswordHash.equals(providedPasswordHash);
+
+        } catch (Exception e) {
+            // Authentication failed
+            return false;
+        }
+    }
+
+    /**
+     * Use SHA-256 instead of MD5 for secure hashing
+     */
+    private String sha256Hash(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(input.getBytes());
             StringBuilder sb = new StringBuilder();
-            for (byte b : hash) { sb.append(String.format("%02x", b)); }
+            for (byte b : hash) { 
+                sb.append(String.format("%02x", b)); 
+            }
             return sb.toString();
         } catch (Exception e) {
             return input;
