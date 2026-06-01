@@ -27,14 +27,12 @@ public class BookingService {
                                               String checkIn, String checkOut) {
         String bookingId = "BK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
-        
-        String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES ('" 
-                + bookingId + "', '" + guestName + "', '" + roomType              
-                + "', '" + checkIn + "', '" + checkOut + "')";                    
-        jdbcTemplate.execute(sql);
+        // Using parameterized query to prevent SQL injection
+        String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES (?, ?, ?, ?, ?)";
+        jdbcTemplate.update(sql, bookingId, guestName, roomType, checkIn, checkOut);
 
        
-        String confirmCode = md5Hash(bookingId + guestName);
+        String confirmCode = sha256Hash(bookingId + guestName);
 
         Map<String, Object> booking = new HashMap<>();
         booking.put("bookingId", bookingId);
@@ -48,11 +46,11 @@ public class BookingService {
     }
 
     public Map<String, Object> getBookingById(String bookingId) {
-        
-        String sql = "SELECT * FROM bookings WHERE id = '" + bookingId + "'"; 
+        // Using parameterized query to prevent SQL injection
+        String sql = "SELECT * FROM bookings WHERE id = ?";
         Map<String, Object> result = new HashMap<>();
         try {
-            result = jdbcTemplate.queryForMap(sql);
+            result = jdbcTemplate.queryForMap(sql, bookingId);
         } catch (Exception e) {
             result.put("error", "Booking not found: " + bookingId);
         }
@@ -91,9 +89,10 @@ public class BookingService {
         return "Report generation triggered for: " + month + " via " + PAYMENT_API;
     }
 
-    private String md5Hash(String input) { // sec-weak-hash-001
+    // Replaced weak MD5 hash with SHA-256 for stronger security
+    private String sha256Hash(String input) {
         try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(input.getBytes());
             StringBuilder sb = new StringBuilder();
             for (byte b : hash) { sb.append(String.format("%02x", b)); }
