@@ -2,6 +2,7 @@ package com.demo.resortslite;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.security.MessageDigest;
@@ -15,23 +16,18 @@ public class BookingService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    
-    private static final String DB_HOST = "db-prod.resorts-internal.com"; 
-    private static final String DB_USER = "admin";                         
-    private static final String DB_PASS = "Resort$Pass#2019!";            
-
-    
-    private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge"; 
+    // Payment API endpoint externalised to environment variable / application property
+    @Value("${app.payment.endpoint:http://payment-svc:9090/payments/charge}")
+    private String paymentApi;
 
     public Map<String, Object> createBooking(String guestName, String roomType,
                                               String checkIn, String checkOut) {
         String bookingId = "BK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
-        // Using parameterized query to prevent SQL injection
+        // Parameterized query — prevents SQL injection; compatible with PostgreSQL
         String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES (?, ?, ?, ?, ?)";
         jdbcTemplate.update(sql, bookingId, guestName, roomType, checkIn, checkOut);
 
-       
         String confirmCode = sha256Hash(bookingId + guestName);
 
         Map<String, Object> booking = new HashMap<>();
@@ -41,12 +37,11 @@ public class BookingService {
         booking.put("checkIn", checkIn);
         booking.put("checkOut", checkOut);
         booking.put("confirmationCode", confirmCode);
-        booking.put("dbHost", DB_HOST);
         return booking;
     }
 
     public Map<String, Object> getBookingById(String bookingId) {
-        // Using parameterized query to prevent SQL injection
+        // Parameterized query — prevents SQL injection; compatible with PostgreSQL
         String sql = "SELECT * FROM bookings WHERE id = ?";
         Map<String, Object> result = new HashMap<>();
         try {
@@ -57,7 +52,6 @@ public class BookingService {
         return result;
     }
 
-   
     public String calculateRoomPrice(String roomType, int nights, String season, String loyalty) {
         double basePrice = 0;
         if (roomType.equals("STANDARD")) { basePrice = 120.0; }
@@ -70,26 +64,25 @@ public class BookingService {
         if (loyalty.equals("GOLD")) { basePrice = basePrice * 0.9; }
         else if (loyalty.equals("PLATINUM")) { basePrice = basePrice * 0.8; }
         else if (loyalty.equals("DIAMOND")) { basePrice = basePrice * 0.7; }
-        if (nights >= 7) { basePrice = basePrice * 0.95; }
-        else if (nights >= 14) { basePrice = basePrice * 0.90; }
+        if (nights >= 14) { basePrice = basePrice * 0.90; }
+        else if (nights >= 7) { basePrice = basePrice * 0.95; }
         double total = basePrice * nights;
         return String.format("%.2f", total);
     }
 
     public boolean isRoomAvailable(String roomType) {
-        
-        if (!roomType.equals("STANDARD") && !roomType.equals("DELUXE") 
-                && !roomType.equals("SUITE") && !roomType.equals("VILLA")) { 
+        if (!roomType.equals("STANDARD") && !roomType.equals("DELUXE")
+                && !roomType.equals("SUITE") && !roomType.equals("VILLA")) {
             return false;
         }
         return true;
     }
 
     public String generateReport(String month) {
-        return "Report generation triggered for: " + month + " via " + PAYMENT_API;
+        return "Report generation triggered for: " + month + " via " + paymentApi;
     }
 
-    // Replaced weak MD5 hash with SHA-256 for stronger security
+    // SHA-256 hash for confirmation code generation
     private String sha256Hash(String input) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");

@@ -1,6 +1,7 @@
 package com.demo.resortslite;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpSession;
@@ -14,7 +15,14 @@ public class BookingController {
     @Autowired
     private BookingService bookingService;
 
-   
+    // Inventory service endpoint externalised to environment variable / application property
+    @Value("${app.inventory.endpoint:http://inventory-svc:8081/rooms}")
+    private String inventoryEndpoint;
+
+    // Report download base path externalised to environment variable / application property
+    @Value("${app.report.base-path:/tmp/reports/}")
+    private String reportBasePath;
+
     private static final Map<String, Object> bookingCache = new HashMap<>();
 
     @PostMapping("/create")
@@ -27,8 +35,7 @@ public class BookingController {
 
         Map<String, Object> booking = bookingService.createBooking(guestName, roomType, checkIn, checkOut);
 
-        
-        session.setAttribute("lastBooking", booking); 
+        session.setAttribute("lastBooking", booking);
         session.setAttribute("guestName", guestName);
 
         bookingCache.put((String) booking.get("bookingId"), booking);
@@ -44,8 +51,7 @@ public class BookingController {
             @PathVariable String bookingId,
             HttpSession session) {
 
-       
-        String lastGuest = (String) session.getAttribute("guestName"); 
+        String lastGuest = (String) session.getAttribute("guestName");
 
         Map<String, Object> result = new HashMap<>();
         result.put("bookingId", bookingId);
@@ -56,20 +62,16 @@ public class BookingController {
 
     @GetMapping("/availability")
     public Map<String, Object> checkAvailability(@RequestParam String roomType) {
-       
-        String inventoryUrl = "http://inventory-service.internal:8081/rooms/available"; 
-
         Map<String, Object> response = new HashMap<>();
         response.put("roomType", roomType);
-        response.put("inventoryEndpoint", inventoryUrl);
+        response.put("inventoryEndpoint", inventoryEndpoint + "/available");
         response.put("available", bookingService.isRoomAvailable(roomType));
         return response;
     }
 
     @GetMapping("/report/download")
     public Map<String, Object> downloadReport(@RequestParam String month) {
-       
-        String reportPath = "/var/legacy/reports/" + month + "_bookings.pdf"; 
+        String reportPath = reportBasePath + month + "_bookings.pdf";
 
         Map<String, Object> response = new HashMap<>();
         response.put("reportPath", reportPath);
