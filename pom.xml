@@ -19,29 +19,73 @@
 
     <properties>
         <java.version>1.8</java.version>
+        <!-- AWS SDK v2 BOM version -->
+        <aws.sdk.version>2.25.40</aws.sdk.version>
     </properties>
 
+    <!-- AWS SDK for Java v2 BOM — manages all AWS SDK module versions -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws.sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
+        <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+
+        <!-- Spring Boot JDBC -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
-        <!-- SECURITY VIOLATION: log4j 2.14.1 has critical CVE-2021-44228 (Log4Shell) -->
+
+        <!-- Spring Data Redis — supports RedisTemplate for distributed caching (cr-java-0067) -->
         <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-core</artifactId>
-            <version>2.14.1</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
-        <!-- SECURITY VIOLATION: commons-collections 3.2.1 has CVE-2015-6420 (RCE) -->
+
+        <!-- Spring Session Data Redis — replaces HttpSession with ElastiCache Redis (cr-java-0065) -->
         <dependency>
-            <groupId>commons-collections</groupId>
-            <artifactId>commons-collections</artifactId>
-            <version>3.2.1</version>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-data-redis</artifactId>
         </dependency>
+
+        <!-- AWS SDK v2: Amazon S3 — replaces local file system operations (cr-java-0061, cr-java-0062, cr-java-0063) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+        </dependency>
+
+        <!-- AWS SDK v2: AWS Secrets Manager — replaces hard-coded DB credentials (cr-java-0069) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>secretsmanager</artifactId>
+        </dependency>
+
+        <!-- AWS SDK v2: AWS Systems Manager Parameter Store — replaces hard-coded URLs and ports (cr-java-0071, cr-java-0077) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ssm</artifactId>
+        </dependency>
+
+        <!-- Jackson for JSON parsing of Secrets Manager payloads -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- H2 in-memory database for local/test use -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
