@@ -3,8 +3,7 @@ package com.demo.resortslite;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpSession;
-import java.util.HashMap;
+import jakarta.servlet.http.HttpSession;
 import java.util.Map;
 
 @RestController
@@ -14,8 +13,8 @@ public class BookingController {
     @Autowired
     private BookingService bookingService;
 
-   
-    private static final Map<String, Object> bookingCache = new HashMap<>();
+    // Using Map.of() for immutable collections (Java 9+)
+    // Removed static mutable cache - not thread-safe and violates stateless REST principles
 
     @PostMapping("/create")
     public Map<String, Object> createBooking(
@@ -27,16 +26,14 @@ public class BookingController {
 
         Map<String, Object> booking = bookingService.createBooking(guestName, roomType, checkIn, checkOut);
 
-        
-        session.setAttribute("lastBooking", booking); 
+        // Session usage for tracking
+        session.setAttribute("lastBooking", booking);
         session.setAttribute("guestName", guestName);
 
-        bookingCache.put((String) booking.get("bookingId"), booking);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("status", "confirmed");
-        response.put("booking", booking);
-        return response;
+        return Map.of(
+            "status", "confirmed",
+            "booking", booking
+        );
     }
 
     @GetMapping("/status/{bookingId}")
@@ -44,36 +41,33 @@ public class BookingController {
             @PathVariable String bookingId,
             HttpSession session) {
 
-       
-        String lastGuest = (String) session.getAttribute("guestName"); 
+        String lastGuest = (String) session.getAttribute("guestName");
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("bookingId", bookingId);
-        result.put("sessionGuest", lastGuest);
-        result.put("details", bookingService.getBookingById(bookingId));
-        return result;
+        return Map.of(
+            "bookingId", bookingId,
+            "sessionGuest", lastGuest != null ? lastGuest : "unknown",
+            "details", bookingService.getBookingById(bookingId)
+        );
     }
 
     @GetMapping("/availability")
     public Map<String, Object> checkAvailability(@RequestParam String roomType) {
-       
-        String inventoryUrl = "http://inventory-service.internal:8081/rooms/available"; 
+        String inventoryUrl = "http://inventory-service.internal:8081/rooms/available";
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("roomType", roomType);
-        response.put("inventoryEndpoint", inventoryUrl);
-        response.put("available", bookingService.isRoomAvailable(roomType));
-        return response;
+        return Map.of(
+            "roomType", roomType,
+            "inventoryEndpoint", inventoryUrl,
+            "available", bookingService.isRoomAvailable(roomType)
+        );
     }
 
     @GetMapping("/report/download")
     public Map<String, Object> downloadReport(@RequestParam String month) {
-       
-        String reportPath = "/var/legacy/reports/" + month + "_bookings.pdf"; 
+        String reportPath = "/var/legacy/reports/" + month + "_bookings.pdf";
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("reportPath", reportPath);
-        response.put("message", bookingService.generateReport(month));
-        return response;
+        return Map.of(
+            "reportPath", reportPath,
+            "message", bookingService.generateReport(month)
+        );
     }
 }
