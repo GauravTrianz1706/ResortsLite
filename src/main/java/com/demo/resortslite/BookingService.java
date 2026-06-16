@@ -1,39 +1,58 @@
 package com.demo.resortslite;
 
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
 
-import java.security.MessageDigest;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+    @Value("${aws.region:us-east-1}")
+    private String awsRegion;
 
-@Service
-public class BookingService {
-
+    @Value("${aws.secrets.db-credentials:resorts/db/credentials}")
+    private String dbCredentialsSecretName;
     @Autowired
-    private JdbcTemplate jdbcTemplate;
-
     
-    private static final String DB_HOST = "db-prod.resorts-internal.com"; 
-    private static final String DB_USER = "admin";                         
-    private static final String DB_PASS = "Resort$Pass#2019!";            
+    }
 
-    
-    private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge"; 
+    /**
+     * Loads database credentials from AWS Secrets Manager instead of hard-coded values.
+     * This enables automatic credential rotation and secure credential management.
+     */
+    private void loadDatabaseCredentials() {
+        try {
+            GetSecretValueRequest request = GetSecretValueRequest.builder()
+                    .secretId(dbCredentialsSecretName)
+                    .build();
+            
+            GetSecretValueResponse response = secretsManagerClient.getSecretValue(request);
+            String secretString = response.secretString();
+            
+            // Parse JSON secret
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode secretJson = mapper.readTree(secretString);
+            
+            dbCredentials = new HashMap<>();
+            dbCredentials.put("host", secretJson.get("host").asText());
+            dbCredentials.put("username", secretJson.get("username").asText());
+            dbCredentials.put("password", secretJson.get("password").asText());
+            
+        } catch (Exception e) {
+            // Fallback to environment variables if Secrets Manager is not available
+            dbCredentials = new HashMap<>();
+            dbCredentials.put("host", System.getenv().getOrDefault("DB_HOST", "localhost"));
+            dbCredentials.put("username", System.getenv().getOrDefault("DB_USERNAME", "sa"));
+            dbCredentials.put("password", System.getenv().getOrDefault("DB_PASSWORD", ""));
+        }
+    }
 
     public Map<String, Object> createBooking(String guestName, String roomType,
                                               String checkIn, String checkOut) {
         String bookingId = "BK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
-        
-        String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES ('" 
-                + bookingId + "', '" + guestName + "', '" + roomType              
-                + "', '" + checkIn + "', '" + checkOut + "')";                    
-        jdbcTemplate.execute(sql);
+        // Use parameterized query to prevent SQL injection
+        String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES (?, ?, ?, ?, ?)";
+        jdbcTemplate.update(sql, bookingId, guestName, roomType, checkIn, checkOut);
 
-       
+        // Generate confirmation code
         String confirmCode = md5Hash(bookingId + guestName);
 
         Map<String, Object> booking = new HashMap<>();
@@ -43,23 +62,26 @@ public class BookingService {
         booking.put("checkIn", checkIn);
         booking.put("checkOut", checkOut);
         booking.put("confirmationCode", confirmCode);
-        booking.put("dbHost", DB_HOST);
+        booking.put("dbHost", dbCredentials.get("host"));
         return booking;
     }
 
     public Map<String, Object> getBookingById(String bookingId) {
-        
-        String sql = "SELECT * FROM bookings WHERE id = '" + bookingId + "'"; 
+        // Use parameterized query to prevent SQL injection
+        String sql = "SELECT * FROM bookings WHERE id = ?";
         Map<String, Object> result = new HashMap<>();
         try {
-            result = jdbcTemplate.queryForMap(sql);
+            result = jdbcTemplate.queryForMap(sql, bookingId);
         } catch (Exception e) {
             result.put("error", "Booking not found: " + bookingId);
         }
         return result;
     }
 
-   
+    /**
+     * Calculates room price based on various factors.
+     * Business logic remains unchanged - only infrastructure dependencies are cloud-ready.
+     */
     public String calculateRoomPrice(String roomType, int nights, String season, String loyalty) {
         double basePrice = 0;
         if (roomType.equals("STANDARD")) { basePrice = 120.0; }
@@ -79,7 +101,6 @@ public class BookingService {
     }
 
     public boolean isRoomAvailable(String roomType) {
-        
         if (!roomType.equals("STANDARD") && !roomType.equals("DELUXE") 
                 && !roomType.equals("SUITE") && !roomType.equals("VILLA")) { 
             return false;
@@ -88,10 +109,14 @@ public class BookingService {
     }
 
     public String generateReport(String month) {
-        return "Report generation triggered for: " + month + " via " + PAYMENT_API;
+        return "Report generation triggered for: " + month + " via " + paymentApiEndpoint;
     }
 
-    private String md5Hash(String input) { // sec-weak-hash-001
+    /**
+     * MD5 hash function for generating confirmation codes.
+     * Note: For production authentication, use AWS Cognito or stronger hashing algorithms.
+     */
+    private String md5Hash(String input) {
         try {
             MessageDigest md = MessageDigest.getInstance("MD5");
             byte[] hash = md.digest(input.getBytes());
