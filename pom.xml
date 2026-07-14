@@ -15,13 +15,29 @@
     <artifactId>resortsLite</artifactId>
     <version>1.0.0</version>
     <name>ResortsLite</name>
-    <description>Legacy resort booking demo — Java 8 / Spring Boot 2.7.x</description>
+    <description>Resort booking service — GCP cloud-ready</description>
 
     <properties>
         <java.version>1.8</java.version>
+        <!-- GCP BOM version aligned with Spring Boot 2.7.x -->
+        <spring-cloud-gcp.version>3.7.8</spring-cloud-gcp.version>
     </properties>
 
+    <!-- Google Cloud BOM — manages versions for all GCP client libraries -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.google.cloud</groupId>
+                <artifactId>libraries-bom</artifactId>
+                <version>26.32.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
+        <!-- ── Spring Boot core ─────────────────────────────────────────── -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -30,22 +46,48 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
-        <!-- SECURITY VIOLATION: log4j 2.14.1 has critical CVE-2021-44228 (Log4Shell) -->
+
+        <!-- ── Spring Data Redis (Memorystore) ──────────────────────────── -->
+        <!-- Replaces HttpSession state storage and in-memory HashMap cache  -->
+        <!-- (blockers 12-16 cr-java-0065, blocker-18 cr-java-0067)          -->
         <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-core</artifactId>
-            <version>2.14.1</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
-        <!-- SECURITY VIOLATION: commons-collections 3.2.1 has CVE-2015-6420 (RCE) -->
+        <!-- Lettuce Redis client (default with spring-boot-starter-data-redis) -->
         <dependency>
-            <groupId>commons-collections</groupId>
-            <artifactId>commons-collections</artifactId>
-            <version>3.2.1</version>
+            <groupId>io.lettuce</groupId>
+            <artifactId>lettuce-core</artifactId>
         </dependency>
+
+        <!-- ── Google Cloud Storage ─────────────────────────────────────── -->
+        <!-- Replaces java.io.File / local FileWriter operations              -->
+        <!-- (blockers 1-7 cr-java-0061/0062/0063)                           -->
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-storage</artifactId>
+        </dependency>
+
+        <!-- ── Google Cloud Secret Manager ─────────────────────────────── -->
+        <!-- Replaces hard-coded DB credentials and file-based auth          -->
+        <!-- (blockers 8-9 cr-java-0069, blocker-17 cr-java-0090)           -->
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-secretmanager</artifactId>
+        </dependency>
+
+        <!-- ── H2 in-memory DB (dev/test only) ──────────────────────────── -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- ── Commons Collections (upgraded — CVE-2015-6420 remediated) ── -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-collections4</artifactId>
+            <version>4.4</version>
         </dependency>
     </dependencies>
 
