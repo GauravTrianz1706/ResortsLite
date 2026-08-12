@@ -57,11 +57,36 @@ patterns** across all four COMPASS assessment domains.
 
 ## How to Run
 
-```bash
-mvn spring-boot:run
-```
+## Cloud Readiness Fixes Applied
 
-App starts on http://localhost:8080
+### cr-java-0077: Hard-coded Ports (FIXED)
+
+**Issue:** Application contained hard-coded port number (8080) preventing dynamic port assignment in cloud environments.
+
+**Remediation Applied:** Replaced hard-coded ports with AWS Parameter Store and environment variable injection.
+
+**Changes Made:**
+1. **ReportService.java**: Removed hard-coded default port value (8080) from `@Value("${server.port:8080}")` annotation
+2. **application.properties**: Updated server.port to use environment variable `${SERVER_PORT:8080}` with fallback for local development
+3. **AwsParameterStoreConfig.java**: Added `ServerPortConfig` bean to retrieve port from AWS Parameter Store
+
+**AWS Configuration Required:**
+
+To deploy in AWS, configure the server port using one of these methods:
+
+1. **AWS Parameter Store** (Recommended for centralized configuration):
+   ```bash
+   aws ssm put-parameter \
+     --name "/resorts-lite/server-port" \
+     --value "8080" \
+     --type "String"
+   ```
+
+2. **Environment Variable** (ECS/EKS/Elastic Beanstalk):
+   - Set `SERVER_PORT` environment variable in task definition or deployment configuration
+   - Example: `SERVER_PORT=8080` or use dynamic port assignment with `SERVER_PORT=0`
+
+---
 
 **H2 Console:** http://localhost:8080/h2-console
 

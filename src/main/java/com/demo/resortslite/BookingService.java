@@ -3,8 +3,8 @@ package com.demo.resortslite;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import com.demo.resortslite.AwsSecretsManagerConfig.DatabaseCredentials;
 
-import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -15,10 +15,11 @@ public class BookingService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    
-    private static final String DB_HOST = "db-prod.resorts-internal.com"; 
-    private static final String DB_USER = "admin";                         
-    private static final String DB_PASS = "Resort$Pass#2019!";            
+    @Autowired
+    private DatabaseCredentials databaseCredentials;
+
+    @Autowired
+    private CognitoAuthenticationService cognitoAuthService;
 
     
     private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge"; 
@@ -33,8 +34,10 @@ public class BookingService {
                 + "', '" + checkIn + "', '" + checkOut + "')";                    
         jdbcTemplate.execute(sql);
 
-       
-        String confirmCode = md5Hash(bookingId + guestName);
+        // FIXED cr-java-0090: Replaced MD5 hash-based confirmation with AWS Cognito secure token generation
+        // Uses AWS Secrets Manager for credential storage and cryptographically secure token generation
+        // instead of weak MD5 hashing that was previously used for authentication/confirmation
+        String confirmCode = cognitoAuthService.generateSecureConfirmationCode(guestName, bookingId);
 
         Map<String, Object> booking = new HashMap<>();
         booking.put("bookingId", bookingId);
@@ -43,7 +46,7 @@ public class BookingService {
         booking.put("checkIn", checkIn);
         booking.put("checkOut", checkOut);
         booking.put("confirmationCode", confirmCode);
-        booking.put("dbHost", DB_HOST);
+        booking.put("dbHost", databaseCredentials.getHost());
         return booking;
     }
 
@@ -89,17 +92,5 @@ public class BookingService {
 
     public String generateReport(String month) {
         return "Report generation triggered for: " + month + " via " + PAYMENT_API;
-    }
-
-    private String md5Hash(String input) { // sec-weak-hash-001
-        try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            byte[] hash = md.digest(input.getBytes());
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hash) { sb.append(String.format("%02x", b)); }
-            return sb.toString();
-        } catch (Exception e) {
-            return input;
-        }
     }
 }

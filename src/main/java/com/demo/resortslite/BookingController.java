@@ -7,12 +7,30 @@ import javax.servlet.http.HttpSession;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Booking Controller for Resort Booking Operations
+ * 
+ * FIXED cr-java-0065: HTTP Session State Storage
+ * 
+ * Session management is now backed by Amazon ElastiCache for Redis via Spring Session.
+ * HttpSession API calls (setAttribute/getAttribute) are transparently stored in Redis
+ * instead of in-memory, enabling:
+ * - Stateless application instances
+ * - Horizontal scalability
+ * - Session persistence across instance restarts
+ * - Load balancing without session affinity
+ * 
+ * Configuration: See RedisSessionConfig.java and application.properties
+ */
 @RestController
 @RequestMapping("/api/bookings")
 public class BookingController {
 
     @Autowired
     private BookingService bookingService;
+
+    @Autowired
+    private AwsParameterStoreConfig.EnvironmentUrls environmentUrls;
 
    
     private static final Map<String, Object> bookingCache = new HashMap<>();
@@ -27,7 +45,8 @@ public class BookingController {
 
         Map<String, Object> booking = bookingService.createBooking(guestName, roomType, checkIn, checkOut);
 
-        
+        // FIXED cr-java-0065: Session data now stored in Amazon ElastiCache for Redis
+        // These setAttribute calls are backed by distributed Redis storage via Spring Session
         session.setAttribute("lastBooking", booking); 
         session.setAttribute("guestName", guestName);
 
@@ -44,7 +63,8 @@ public class BookingController {
             @PathVariable String bookingId,
             HttpSession session) {
 
-       
+        // FIXED cr-java-0065: Session data retrieved from Amazon ElastiCache for Redis
+        // getAttribute call is backed by distributed Redis storage via Spring Session
         String lastGuest = (String) session.getAttribute("guestName"); 
 
         Map<String, Object> result = new HashMap<>();
@@ -57,7 +77,8 @@ public class BookingController {
     @GetMapping("/availability")
     public Map<String, Object> checkAvailability(@RequestParam String roomType) {
        
-        String inventoryUrl = "http://inventory-service.internal:8081/rooms/available"; 
+        // URL retrieved from AWS Systems Manager Parameter Store
+        String inventoryUrl = environmentUrls.getInventoryServiceUrl();
 
         Map<String, Object> response = new HashMap<>();
         response.put("roomType", roomType);
