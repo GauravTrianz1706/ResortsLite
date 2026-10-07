@@ -1,5 +1,6 @@
 package com.demo.resortslite;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -13,23 +14,26 @@ import java.util.Map;
 @Service
 public class ReportService {
 
-    
-    private static final String REPORT_BASE_PATH = "/var/legacy/reports/"; // czr-java-001
+    // cz-java-0057: Replaced hardcoded absolute path with environment variable injection
+    @Value("${REPORT_BASE_PATH:/var/reports}")
+    private String reportBasePath;
 
-    
-    private static final String BACKUP_PATH = "C:\\ResortBackups\\nightly\\"; // czr-java-001
+    // cz-java-0057: Replaced hardcoded Windows absolute path with environment variable injection
+    @Value("${BACKUP_PATH:/var/backups/nightly}")
+    private String backupPath;
 
-    
-    private static final int SERVER_PORT = 8080; // czr-port-001
+    // cz-java-0061: Replaced hardcoded port 8080 with environment-variable-driven configuration
+    @Value("${SERVER_PORT:8080}")
+    private int serverPort;
 
     public Map<String, Object> generateMonthlyReport(String month, String year) {
         String fileName = "resort_report_" + month + "_" + year + ".csv";
-        String fullPath = REPORT_BASE_PATH + fileName; // czr-java-001
+        String fullPath = reportBasePath + "/" + fileName;
 
         Map<String, Object> result = new HashMap<>();
 
         try {
-            File reportDir = new File(REPORT_BASE_PATH); // czr-java-001
+            File reportDir = new File(reportBasePath);
             if (!reportDir.exists()) {
                 reportDir.mkdirs();
             }
@@ -42,7 +46,7 @@ public class ReportService {
 
             result.put("status", "generated");
             result.put("path", fullPath);
-            result.put("serverPort", SERVER_PORT); // czr-port-001
+            result.put("serverPort", serverPort);
 
         } catch (IOException e) {
             result.put("status", "error");
@@ -54,14 +58,15 @@ public class ReportService {
 
     
     public String buildReportDownloadUrl(String reportName) { 
+        return "http://localhost:" + serverPort + "/reports/download?file=" + reportName;
     }
 
     public Map<String, Object> getSystemInfo() { 
         
         Map<String, Object> info = new HashMap<>();
-        info.put("reportPath", REPORT_BASE_PATH);  
-        info.put("backupPath", BACKUP_PATH);       
-        info.put("serverPort", SERVER_PORT);        
+        info.put("reportPath", reportBasePath);  
+        info.put("backupPath", backupPath);       
+        info.put("serverPort", serverPort);
         
         return info;
     }

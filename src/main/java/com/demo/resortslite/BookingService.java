@@ -2,6 +2,7 @@ package com.demo.resortslite;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.security.MessageDigest;
@@ -20,8 +21,9 @@ public class BookingService {
     private static final String DB_USER = "admin";                         
     private static final String DB_PASS = "Resort$Pass#2019!";            
 
-    
-    private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge"; 
+    // cz-java-0062: Replaced hardcoded IP address with environment variable for container deployment flexibility
+    @Value("${PAYMENT_API_URL:http://payment-service:9090/payments/charge}")
+    private String PAYMENT_API;
 
     public Map<String, Object> createBooking(String guestName, String roomType,
                                               String checkIn, String checkOut) {
