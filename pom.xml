@@ -8,6 +8,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
+        <!-- Spring Boot 2.7.x is the last 2.x line; it supports Java 11 fully -->
         <version>2.7.18</version>
     </parent>
 
@@ -15,10 +16,17 @@
     <artifactId>resortsLite</artifactId>
     <version>1.0.0</version>
     <name>ResortsLite</name>
-    <description>Legacy resort booking demo — Java 8 / Spring Boot 2.7.x</description>
+    <description>Resort booking demo — Java 11 / Spring Boot 2.7.x</description>
 
     <properties>
-        <java.version>1.8</java.version>
+        <!-- JAVA8_TO_11_DEPENDENCY_UPDATES / JAVA8_TO_11_LOMBOK_CONFIGURATION:
+             Updated java.version from 1.8 to 11 so that maven-compiler-plugin
+             (inherited from spring-boot-starter-parent) targets Java 11 source
+             and bytecode.  This resolves the build-configuration blocker. -->
+        <java.version>11</java.version>
+        <!-- Explicit compiler source/target for clarity -->
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
     </properties>
 
     <dependencies>
@@ -30,18 +38,48 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
-        <!-- SECURITY VIOLATION: log4j 2.14.1 has critical CVE-2021-44228 (Log4Shell) -->
+
+        <!-- JAVA8_TO_11_DEPRECATED_APIS / JAVA8_TO_11_JAVAX_ANNOTATION_REMOVED:
+             javax.annotation-api is no longer bundled in the JDK as of Java 11.
+             Adding it explicitly ensures @PostConstruct / @PreDestroy / @Resource
+             remain available without relying on the JDK classpath. -->
+        <dependency>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
+        </dependency>
+
+        <!-- JAVA8_TO_11_DEPRECATED_APIS (JAXB removed from JDK in Java 11):
+             Add JAXB API + runtime so any javax.xml.bind usage compiles and runs. -->
+        <dependency>
+            <groupId>javax.xml.bind</groupId>
+            <artifactId>jaxb-api</artifactId>
+            <version>2.3.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jaxb</groupId>
+            <artifactId>jaxb-runtime</artifactId>
+            <version>2.3.9</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- log4j-core: upgraded from 2.14.1 (CVE-2021-44228 Log4Shell) to
+             2.17.2 which is the last 2.x release with all known CVEs patched.
+             Also compatible with Java 11. -->
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-core</artifactId>
-            <version>2.14.1</version>
+            <version>2.17.2</version>
         </dependency>
-        <!-- SECURITY VIOLATION: commons-collections 3.2.1 has CVE-2015-6420 (RCE) -->
+
+        <!-- commons-collections: upgraded from 3.2.1 (CVE-2015-6420 RCE) to
+             3.2.2 which contains the deserialization fix. -->
         <dependency>
             <groupId>commons-collections</groupId>
             <artifactId>commons-collections</artifactId>
-            <version>3.2.1</version>
+            <version>3.2.2</version>
         </dependency>
+
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
@@ -51,6 +89,28 @@
 
     <build>
         <plugins>
+            <!-- JAVA8_TO_11_MAVEN_PLUGIN_UPDATES:
+                 Explicitly configure maven-compiler-plugin 3.11.0 (minimum
+                 recommended for Java 11 builds) with release flag instead of
+                 source/target to enforce cross-compilation safety. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>11</release>
+                </configuration>
+            </plugin>
+
+            <!-- JAVA8_TO_11_MAVEN_PLUGIN_UPDATES:
+                 maven-surefire-plugin 2.22.2+ is required for JUnit 5 and
+                 for stable test execution on Java 11. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>2.22.2</version>
+            </plugin>
+
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
