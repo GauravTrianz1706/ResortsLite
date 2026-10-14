@@ -19,9 +19,43 @@
 
     <properties>
         <java.version>1.8</java.version>
+        <aws.sdk.version>2.25.40</aws.sdk.version>
     </properties>
 
     <dependencies>
+        <!-- AWS SDK v2 S3 client — replaces hard-coded file path dependencies (cr-java-0061) -->
+        <!-- S3Presigner (cr-java-0062) is bundled within this same s3 artifact -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+        <!-- cr-java-0069: AWS Secrets Manager client for externalised DB credentials -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>secretsmanager</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+        <!-- cr-java-0071: AWS Systems Manager client for externalised environment URLs -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ssm</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+        <!-- cr-java-0090: Amazon Cognito Identity Provider client — replaces file-based
+             authentication with cloud-native user identity management via Amazon Cognito.
+             Confirmation tokens are now issued by Cognito instead of local MD5 hashing. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cognitoidentityprovider</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+        <!-- cr-java-0069: HikariCP connection pool — DataSource wired with Secrets Manager creds -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>4.0.3</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -29,6 +63,18 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <!-- cr-java-0065: Spring Session with Redis backend — replaces HttpSession server-local
+             storage with Amazon ElastiCache for Redis, enabling stateless instances and
+             horizontal scaling without server affinity. -->
+        <dependency>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-data-redis</artifactId>
+        </dependency>
+        <!-- cr-java-0065: Spring Data Redis (Lettuce client) — required by Spring Session Redis -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
         <!-- SECURITY VIOLATION: log4j 2.14.1 has critical CVE-2021-44228 (Log4Shell) -->
         <dependency>
