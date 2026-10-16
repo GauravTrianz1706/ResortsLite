@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -29,8 +30,9 @@ public class BookingService {
         String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES (?, ?, ?, ?, ?)";
         jdbcTemplate.update(sql, bookingId, guestName, roomType, checkIn, checkOut);
 
-        // JAVA8_TO_11_SECURITY_CHANGES: MD5 is a deprecated/weak algorithm.
-        // Replaced with SHA-256 which is the recommended minimum for Java 11+.
+        // Issue #7 (medium / security - JAVA8_TO_11_SECURITY_CHANGES):
+        // MD5 is a deprecated/weak algorithm. Replaced with SHA-256 which is
+        // the recommended minimum for Java 11+.
         String confirmCode = sha256Hash(bookingId + guestName);
 
         Map<String, Object> booking = new HashMap<>();
@@ -76,8 +78,7 @@ public class BookingService {
             case "DIAMOND":  basePrice *= 0.7; break;
             default: break;
         }
-        // Note: the original logic had the >= 14 branch unreachable (>= 7 matched first).
-        // Corrected to check the longer stay first.
+        // Corrected to check the longer stay first (>= 14 before >= 7).
         if (nights >= 14)      { basePrice *= 0.90; }
         else if (nights >= 7)  { basePrice *= 0.95; }
         double total = basePrice * nights;
@@ -101,15 +102,15 @@ public class BookingService {
     }
 
     /**
-     * JAVA8_TO_11_SECURITY_CHANGES: Replaced the former md5Hash() helper with
-     * SHA-256.  MD5 is cryptographically broken and flagged by the upgrade rules
-     * as a deprecated/weak algorithm that should be replaced during the Java 11
-     * migration.
+     * Issue #7 (medium / security - JAVA8_TO_11_SECURITY_CHANGES):
+     * Replaced the former md5Hash() helper with SHA-256. MD5 is cryptographically
+     * broken and flagged by the upgrade rules as a deprecated/weak algorithm that
+     * should be replaced during the Java 11 migration.
      */
     private String sha256Hash(String input) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hash = md.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
             for (byte b : hash) {
                 sb.append(String.format("%02x", b));

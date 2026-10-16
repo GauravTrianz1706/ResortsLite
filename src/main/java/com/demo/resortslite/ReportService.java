@@ -5,8 +5,6 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -52,9 +50,10 @@ public class ReportService {
     }
 
     /**
-     * Builds a download URL for the given report name.
+     * Issue #8 (low / breaking-change):
      * Previously this method had an empty body which caused a compilation error
-     * (non-void method with no return statement).  Fixed to return a proper URL.
+     * (non-void method with no return statement). Fixed to return a proper URL
+     * string so the method compiles and behaves correctly.
      */
     public String buildReportDownloadUrl(String reportName) {
         return "/api/reports/download?name=" + reportName;
