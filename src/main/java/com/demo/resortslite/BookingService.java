@@ -2,6 +2,7 @@ package com.demo.resortslite;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.security.MessageDigest;
@@ -16,23 +17,25 @@ public class BookingService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    private static final String DB_HOST = "db-prod.resorts-internal.com";
-    private static final String DB_USER = "admin";
-    private static final String DB_PASS = "Resort$Pass#2019!";
+    // ── Externalised configuration ────────────────────────────────────────────
+    // Hardcoded DB_HOST / DB_USER / DB_PASS constants removed; connection
+    // details are now managed exclusively through application.properties /
+    // environment variables and the DataSource bean configured by Spring Boot.
+    // Hardcoded PAYMENT_API IP replaced with an injected property value.
+    @Value("${app.payment.endpoint:http://payment-svc:9090/charge}")
+    private String paymentApi;
 
-    private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge";
-
+    // ── Booking creation ──────────────────────────────────────────────────────
     public Map<String, Object> createBooking(String guestName, String roomType,
                                               String checkIn, String checkOut) {
         String bookingId = "BK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
-        // Use parameterised query to prevent SQL injection
+        // PostgreSQL-compatible parameterised INSERT (ANSI SQL — no dialect-
+        // specific syntax required for a simple INSERT).
         String sql = "INSERT INTO bookings (id, guest, room, checkin, checkout) VALUES (?, ?, ?, ?, ?)";
         jdbcTemplate.update(sql, bookingId, guestName, roomType, checkIn, checkOut);
 
-        // Issue #7 (medium / security - JAVA8_TO_11_SECURITY_CHANGES):
-        // MD5 is a deprecated/weak algorithm. Replaced with SHA-256 which is
-        // the recommended minimum for Java 11+.
+        // SHA-256 confirmation code (MD5 replaced — weak/deprecated algorithm).
         String confirmCode = sha256Hash(bookingId + guestName);
 
         Map<String, Object> booking = new HashMap<>();
@@ -42,12 +45,13 @@ public class BookingService {
         booking.put("checkIn", checkIn);
         booking.put("checkOut", checkOut);
         booking.put("confirmationCode", confirmCode);
-        booking.put("dbHost", DB_HOST);
+        // dbHost removed from response — never expose infrastructure details
         return booking;
     }
 
+    // ── Booking retrieval ─────────────────────────────────────────────────────
     public Map<String, Object> getBookingById(String bookingId) {
-        // Use parameterised query to prevent SQL injection
+        // PostgreSQL-compatible parameterised SELECT.
         String sql = "SELECT * FROM bookings WHERE id = ?";
         Map<String, Object> result = new HashMap<>();
         try {
@@ -58,6 +62,7 @@ public class BookingService {
         return result;
     }
 
+    // ── Pricing logic ─────────────────────────────────────────────────────────
     public String calculateRoomPrice(String roomType, int nights, String season, String loyalty) {
         double basePrice;
         switch (roomType) {
@@ -78,13 +83,13 @@ public class BookingService {
             case "DIAMOND":  basePrice *= 0.7; break;
             default: break;
         }
-        // Corrected to check the longer stay first (>= 14 before >= 7).
         if (nights >= 14)      { basePrice *= 0.90; }
         else if (nights >= 7)  { basePrice *= 0.95; }
         double total = basePrice * nights;
         return String.format("%.2f", total);
     }
 
+    // ── Availability check ────────────────────────────────────────────────────
     public boolean isRoomAvailable(String roomType) {
         switch (roomType) {
             case "STANDARD":
@@ -97,15 +102,16 @@ public class BookingService {
         }
     }
 
+    // ── Report trigger ────────────────────────────────────────────────────────
     public String generateReport(String month) {
-        return "Report generation triggered for: " + month + " via " + PAYMENT_API;
+        // paymentApi is now injected from application.properties, not hardcoded.
+        return "Report generation triggered for: " + month + " via " + paymentApi;
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
     /**
-     * Issue #7 (medium / security - JAVA8_TO_11_SECURITY_CHANGES):
-     * Replaced the former md5Hash() helper with SHA-256. MD5 is cryptographically
-     * broken and flagged by the upgrade rules as a deprecated/weak algorithm that
-     * should be replaced during the Java 11 migration.
+     * SHA-256 hash helper. MD5 was replaced because it is cryptographically
+     * broken and flagged as a deprecated/weak algorithm for Java 11+ migrations.
      */
     private String sha256Hash(String input) {
         try {

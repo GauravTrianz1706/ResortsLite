@@ -1,5 +1,6 @@
 package com.demo.resortslite;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -11,26 +12,37 @@ import java.util.Map;
 @Service
 public class ReportService {
 
-    private static final String REPORT_BASE_PATH = "/var/legacy/reports/";
+    // ── Externalised configuration ────────────────────────────────────────────
+    // Hardcoded OS-specific paths replaced with injectable properties so the
+    // service runs correctly on both Linux containers and Windows developer
+    // machines without code changes.
+    @Value("${app.report.base-path:${java.io.tmpdir}/resorts/reports/}")
+    private String reportBasePath;
 
-    private static final String BACKUP_PATH = "C:\\ResortBackups\\nightly\\";
+    // Windows-specific backup path removed; backup location is now an
+    // environment-specific concern handled outside the application.
+    @Value("${app.report.backup-path:${java.io.tmpdir}/resorts/backups/}")
+    private String backupPath;
 
-    private static final int SERVER_PORT = 8080;
+    // Server port is managed by Spring Boot; no need to duplicate it here.
+    @Value("${server.port:8080}")
+    private int serverPort;
 
+    // ── Monthly report generation ─────────────────────────────────────────────
     public Map<String, Object> generateMonthlyReport(String month, String year) {
         String fileName = "resort_report_" + month + "_" + year + ".csv";
-        String fullPath = REPORT_BASE_PATH + fileName;
+        String fullPath = reportBasePath + fileName;
 
         Map<String, Object> result = new HashMap<>();
 
         try {
-            File reportDir = new File(REPORT_BASE_PATH);
+            File reportDir = new File(reportBasePath);
             if (!reportDir.exists()) {
                 reportDir.mkdirs();
             }
 
-            // Java 11: use try-with-resources so the writer is always closed
-            // (replaces the manual writer.close() call that could leak on exception)
+            // try-with-resources ensures the writer is always closed even on
+            // exception (Java 11 best practice).
             try (FileWriter writer = new FileWriter(fullPath)) {
                 writer.write("BookingID,GuestName,RoomType,CheckIn,CheckOut,Amount\n");
                 writer.write("BK-001,John Smith,SUITE,2024-03-01,2024-03-05,1750.00\n");
@@ -39,7 +51,7 @@ public class ReportService {
 
             result.put("status", "generated");
             result.put("path", fullPath);
-            result.put("serverPort", SERVER_PORT);
+            result.put("serverPort", serverPort);
 
         } catch (IOException e) {
             result.put("status", "error");
@@ -49,21 +61,21 @@ public class ReportService {
         return result;
     }
 
+    // ── Report download URL builder ───────────────────────────────────────────
     /**
-     * Issue #8 (low / breaking-change):
-     * Previously this method had an empty body which caused a compilation error
-     * (non-void method with no return statement). Fixed to return a proper URL
-     * string so the method compiles and behaves correctly.
+     * Returns a portable relative URL for downloading a named report.
+     * The former empty method body (compilation error) has been corrected.
      */
     public String buildReportDownloadUrl(String reportName) {
         return "/api/reports/download?name=" + reportName;
     }
 
+    // ── System info ───────────────────────────────────────────────────────────
     public Map<String, Object> getSystemInfo() {
         Map<String, Object> info = new HashMap<>();
-        info.put("reportPath", REPORT_BASE_PATH);
-        info.put("backupPath", BACKUP_PATH);
-        info.put("serverPort", SERVER_PORT);
+        info.put("reportPath", reportBasePath);
+        info.put("backupPath", backupPath);
+        info.put("serverPort", serverPort);
         return info;
     }
 }

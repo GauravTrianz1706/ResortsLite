@@ -1,6 +1,7 @@
 package com.demo.resortslite;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpSession;
@@ -14,9 +15,16 @@ public class BookingController {
     @Autowired
     private BookingService bookingService;
 
-   
+    // ── Externalised configuration ────────────────────────────────────────────
+    // Hardcoded internal service URL replaced with an injected property value
+    // so the endpoint can be configured per environment without code changes.
+    @Value("${app.inventory.endpoint:http://inventory-svc:8081/rooms}")
+    private String inventoryEndpoint;
+
+    // In-memory booking cache (unchanged — no DB-compatibility impact)
     private static final Map<String, Object> bookingCache = new HashMap<>();
 
+    // ── Create booking ────────────────────────────────────────────────────────
     @PostMapping("/create")
     public Map<String, Object> createBooking(
             @RequestParam String guestName,
@@ -27,8 +35,7 @@ public class BookingController {
 
         Map<String, Object> booking = bookingService.createBooking(guestName, roomType, checkIn, checkOut);
 
-        
-        session.setAttribute("lastBooking", booking); 
+        session.setAttribute("lastBooking", booking);
         session.setAttribute("guestName", guestName);
 
         bookingCache.put((String) booking.get("bookingId"), booking);
@@ -39,13 +46,13 @@ public class BookingController {
         return response;
     }
 
+    // ── Get booking status ────────────────────────────────────────────────────
     @GetMapping("/status/{bookingId}")
     public Map<String, Object> getBookingStatus(
             @PathVariable String bookingId,
             HttpSession session) {
 
-       
-        String lastGuest = (String) session.getAttribute("guestName"); 
+        String lastGuest = (String) session.getAttribute("guestName");
 
         Map<String, Object> result = new HashMap<>();
         result.put("bookingId", bookingId);
@@ -54,22 +61,24 @@ public class BookingController {
         return result;
     }
 
+    // ── Check availability ────────────────────────────────────────────────────
     @GetMapping("/availability")
     public Map<String, Object> checkAvailability(@RequestParam String roomType) {
-       
-        String inventoryUrl = "http://inventory-service.internal:8081/rooms/available"; 
-
+        // inventoryEndpoint is now injected from application.properties;
+        // the hardcoded http://inventory-service.internal:8081 URL is removed.
         Map<String, Object> response = new HashMap<>();
         response.put("roomType", roomType);
-        response.put("inventoryEndpoint", inventoryUrl);
+        response.put("inventoryEndpoint", inventoryEndpoint);
         response.put("available", bookingService.isRoomAvailable(roomType));
         return response;
     }
 
+    // ── Download report ───────────────────────────────────────────────────────
     @GetMapping("/report/download")
     public Map<String, Object> downloadReport(@RequestParam String month) {
-       
-        String reportPath = "/var/legacy/reports/" + month + "_bookings.pdf"; 
+        // Hardcoded /var/legacy/reports/ path replaced with a relative API path
+        // that is portable across environments.
+        String reportPath = "/api/reports/" + month + "_bookings.pdf";
 
         Map<String, Object> response = new HashMap<>();
         response.put("reportPath", reportPath);
