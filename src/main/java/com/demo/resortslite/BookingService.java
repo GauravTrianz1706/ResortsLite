@@ -2,7 +2,15 @@ package com.demo.resortslite;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueResponse;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.security.MessageDigest;
 import java.util.HashMap;
@@ -15,10 +23,49 @@ public class BookingService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    
-    private static final String DB_HOST = "db-prod.resorts-internal.com"; 
-    private static final String DB_USER = "admin";                         
-    private static final String DB_PASS = "Resort$Pass#2019!";            
+    // cr-java-0069: DB_HOST, DB_USER, and DB_PASS are no longer hard-coded.
+    // Database credentials are retrieved at runtime from AWS Secrets Manager
+    // using the secret name configured via the DB_SECRET_NAME environment variable.
+    // This enables automatic credential rotation without redeployment and prevents
+    // credential exposure in source code or container image layers.
+    private static final String DB_HOST = System.getenv().getOrDefault("DB_HOST", "");
+
+    @Value("${cloud.aws.region:us-east-1}")
+    private String awsRegion;
+
+    @Value("${db.secret.name:${DB_SECRET_NAME:resortslite/db/credentials}}")
+    private String dbSecretName;
+
+    /**
+     * Retrieves database credentials (username and password) from AWS Secrets Manager.
+     * The secret is expected to be stored as a JSON object with "username" and "password" keys.
+     * Example secret value: {"username":"admin","password":"Resort$Pass#2019!"}
+     *
+     * @return Map containing "username" and "password" keys
+     */
+    public Map<String, String> getDbCredentials() {
+        try (SecretsManagerClient client = SecretsManagerClient.builder()
+                .region(Region.of(awsRegion))
+                .build()) {
+
+            GetSecretValueRequest request = GetSecretValueRequest.builder()
+                    .secretId(dbSecretName)
+                    .build();
+
+            GetSecretValueResponse response = client.getSecretValue(request);
+            String secretJson = response.secretString();
+
+            ObjectMapper mapper = new ObjectMapper();
+            @SuppressWarnings("unchecked")
+            Map<String, String> secretMap = mapper.readValue(secretJson, Map.class);
+            return secretMap;
+
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    "Failed to retrieve database credentials from AWS Secrets Manager (secret: "
+                            + dbSecretName + "): " + e.getMessage(), e);
+        }
+    }
 
     
     private static final String PAYMENT_API = "http://10.0.1.45:9090/payments/charge"; 
